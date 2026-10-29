@@ -179,6 +179,16 @@ const TRUE_PEAK_PHASES: readonly (readonly number[])[] = [
   ],
 ];
 const TAPS = 12;
+const CHUNK = 64;
+
+/**
+ * No interpolated value can exceed the largest input in its window by more than the
+ * largest sum of |coefficients| over the phases (about 2.02). Chunks whose inputs are all
+ * that far below the peak found so far cannot raise it, so they are skipped.
+ */
+const INTERPOLATION_BOUND = Math.max(
+  ...TRUE_PEAK_PHASES.map((phase) => phase.reduce((sum, h) => sum + Math.abs(h), 0)),
+);
 
 /** Highest absolute value of the 4x oversampled signal across channels, in dBTP. */
 export function truePeak(
@@ -186,45 +196,72 @@ export function truePeak(
   onProgress?: (fraction: number) => void,
 ): number {
   let peak = 0;
-  const [p0, p1, p2, p3] = TRUE_PEAK_PHASES;
-  for (let c = 0; c < channels.length; c++) {
-    const x = channels[c];
-    const n = x.length;
-    // The sample peak counts too, so the result is never below it.
-    for (let i = 0; i < n; i++) {
+  // The sample peak counts too, so the result is never below it. Finding it first also
+  // gives the chunk skip a high bar from the start.
+  for (const x of channels) {
+    for (let i = 0; i < x.length; i++) {
       const a = Math.abs(x[i]);
       if (a > peak) peak = a;
     }
-    // Interpolated values: output m uses inputs m-11..m, newest first.
-    for (let m = 0; m < n; m++) {
-      let v0 = 0,
-        v1 = 0,
-        v2 = 0,
-        v3 = 0;
-      const first = m - TAPS + 1;
-      if (first >= 0) {
-        for (let t = 0; t < TAPS; t++) {
-          const s = x[m - t];
-          v0 += p0[t] * s;
-          v1 += p1[t] * s;
-          v2 += p2[t] * s;
-          v3 += p3[t] * s;
-        }
-      } else {
-        for (let t = 0; t <= m; t++) {
-          const s = x[m - t];
-          v0 += p0[t] * s;
-          v1 += p1[t] * s;
-          v2 += p2[t] * s;
-          v3 += p3[t] * s;
-        }
+  }
+
+  for (let c = 0; c < channels.length; c++) {
+    const x = channels[c];
+    const n = x.length;
+    for (let start = 0; start < n; start += CHUNK) {
+      const end = Math.min(n, start + CHUNK);
+      let windowMax = 0;
+      for (let i = Math.max(0, start - TAPS + 1); i < end; i++) {
+        const a = Math.abs(x[i]);
+        if (a > windowMax) windowMax = a;
       }
-      const a = Math.max(Math.abs(v0), Math.abs(v1), Math.abs(v2), Math.abs(v3));
-      if (a > peak) peak = a;
+      if (windowMax * INTERPOLATION_BOUND <= peak) continue;
+      const chunkPeak = interpolatedPeak(x, start, end);
+      if (chunkPeak > peak) peak = chunkPeak;
     }
     onProgress?.((c + 1) / channels.length);
   }
   return peak === 0 ? -Infinity : 20 * Math.log10(peak);
+}
+
+// Coefficients as locals: phases 2 and 3 are phases 1 and 0 reversed.
+const [
+  [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
+  [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11],
+] = TRUE_PEAK_PHASES as number[][];
+
+/**
+ * Peak of the four interpolated phases for outputs start..end-1. Output m uses inputs
+ * m-11..m (s0 is the newest); the 12 inputs are kept in a shift register of locals, which
+ * JITs far better than indexing into the coefficient arrays.
+ */
+// prettier-ignore
+function interpolatedPeak(x: Float32Array, start: number, end: number): number {
+  const at = (i: number) => (i >= 0 ? x[i] : 0);
+  let s1 = at(start - 1), s2 = at(start - 2), s3 = at(start - 3), s4 = at(start - 4);
+  let s5 = at(start - 5), s6 = at(start - 6), s7 = at(start - 7), s8 = at(start - 8);
+  let s9 = at(start - 9), s10 = at(start - 10), s11 = at(start - 11);
+  let peak = 0;
+  for (let m = start; m < end; m++) {
+    const s0 = x[m];
+    const v0 =
+      a0 * s0 + a1 * s1 + a2 * s2 + a3 * s3 + a4 * s4 + a5 * s5 +
+      a6 * s6 + a7 * s7 + a8 * s8 + a9 * s9 + a10 * s10 + a11 * s11;
+    const v1 =
+      b0 * s0 + b1 * s1 + b2 * s2 + b3 * s3 + b4 * s4 + b5 * s5 +
+      b6 * s6 + b7 * s7 + b8 * s8 + b9 * s9 + b10 * s10 + b11 * s11;
+    const v2 =
+      b11 * s0 + b10 * s1 + b9 * s2 + b8 * s3 + b7 * s4 + b6 * s5 +
+      b5 * s6 + b4 * s7 + b3 * s8 + b2 * s9 + b1 * s10 + b0 * s11;
+    const v3 =
+      a11 * s0 + a10 * s1 + a9 * s2 + a8 * s3 + a7 * s4 + a6 * s5 +
+      a5 * s6 + a4 * s7 + a3 * s8 + a2 * s9 + a1 * s10 + a0 * s11;
+    const a = Math.max(Math.abs(v0), Math.abs(v1), Math.abs(v2), Math.abs(v3));
+    if (a > peak) peak = a;
+    s11 = s10; s10 = s9; s9 = s8; s8 = s7; s7 = s6; s6 = s5;
+    s5 = s4; s4 = s3; s3 = s2; s2 = s1; s1 = s0;
+  }
+  return peak;
 }
 
 export function measure(

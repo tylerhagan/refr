@@ -18,6 +18,30 @@ function sine(segments: [number, number][], freq = 1000, fs = FS, phase = 0): Fl
 
 const stereo = (x: Float32Array) => [x, x.slice()];
 
+// The BS.1770-4 Annex 2 filter, applied the slow obvious way, to check the fast path.
+const PHASE_0 = [
+  0.001708984375, 0.010986328125, -0.0196533203125, 0.033203125, -0.0594482421875, 0.1373291015625,
+  0.97216796875, -0.102294921875, 0.047607421875, -0.026611328125, 0.014892578125, -0.00830078125,
+];
+const PHASE_1 = [
+  -0.0291748046875, 0.029296875, -0.0517578125, 0.089111328125, -0.16650390625, 0.465087890625,
+  0.77978515625, -0.2003173828125, 0.1015625, -0.0582275390625, 0.0330810546875, -0.0189208984375,
+];
+const PHASES = [PHASE_0, PHASE_1, [...PHASE_1].reverse(), [...PHASE_0].reverse()];
+
+function referenceTruePeak(x: Float32Array): number {
+  let peak = 0;
+  for (let m = 0; m < x.length; m++) {
+    peak = Math.max(peak, Math.abs(x[m]));
+    for (const phase of PHASES) {
+      let v = 0;
+      for (let t = 0; t < 12 && m - t >= 0; t++) v += phase[t] * x[m - t];
+      peak = Math.max(peak, Math.abs(v));
+    }
+  }
+  return 20 * Math.log10(peak);
+}
+
 describe('K-weighting', () => {
   it('matches the BS.1770-4 coefficient table at 48 kHz', () => {
     const [shelf, hp] = kWeightingFilters(48000);
@@ -101,6 +125,18 @@ describe('true peak', () => {
   it('is never below the sample peak', () => {
     const x = sine([[-1, 1]], 997);
     expect(truePeak([x])).toBeGreaterThanOrEqual(-1 - 1e-6);
+  });
+
+  it('matches a plain 48-tap reference on noise with loud and quiet passages', () => {
+    // Seeded noise so the test is repeatable; quiet stretches exercise the chunk skip.
+    let seed = 12345;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) * 2 - 1;
+    const x = new Float32Array(FS * 2);
+    for (let i = 0; i < x.length; i++) {
+      const level = Math.floor(i / 4000) % 3 === 0 ? 0.9 : 0.05;
+      x[i] = level * rand();
+    }
+    expect(truePeak([x])).toBeCloseTo(referenceTruePeak(x), 9);
   });
 
   it('returns -Infinity for digital silence', () => {
