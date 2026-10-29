@@ -30,6 +30,7 @@ export type TransportState = 'stopped' | 'playing' | 'paused';
 const FADE = 0.01; // 10 ms for flip, band and mono crossfades
 const SEEK_FADE = 0.005; // short dip around restarts so seeks never click
 const LEAD = 0.03; // scheduling headroom so every source starts on the same frame
+const MIN_LOOP = 0.05;
 const LOW_HZ = 120;
 const HIGH_HZ = 5000;
 const BUTTERWORTH_Q = Math.SQRT1_2;
@@ -142,9 +143,13 @@ export class AudioEngine {
     const position = this.position;
     if (wasPlaying) this.fadeOutAndStop();
 
-    for (const g of this.slotGains.values()) g.disconnect();
+    // Let the old sources finish their fade-out before cutting their gain nodes loose.
+    const oldGains = [...this.slotGains.values()];
+    setTimeout(() => oldGains.forEach((g) => g.disconnect()), (LEAD + SEEK_FADE) * 1000 + 50);
     this.slotGains.clear();
-    this.slots = slots;
+    // Copied, so updateSlot never mutates the caller's objects.
+    this.slots = slots.map((s) => ({ ...s }));
+    this.clampLoopToRange();
     for (const slot of slots) {
       const g = new GainNode(ctx, { gain: 0 });
       g.connect(this.bus);
@@ -153,7 +158,7 @@ export class AudioEngine {
     if (!slots.some((s) => s.id === this.activeId)) this.activeId = slots[0]?.id ?? null;
     this.applySlotGains(0);
 
-    if (wasPlaying) this.startSources(Math.min(position, this.endTime), SEEK_FADE);
+    if (wasPlaying) this.startSources(Math.min(position, this.endTime));
     else this.pausedAt = Math.min(position, this.endTime);
   }
 
@@ -164,8 +169,13 @@ export class AudioEngine {
     const offsetChanged =
       patch.offsetSeconds !== undefined && patch.offsetSeconds !== slot.offsetSeconds;
     Object.assign(slot, patch);
-    if (offsetChanged && this.state === 'playing') this.restart(this.position);
-    else this.applySlotGains(FADE);
+    if (offsetChanged) {
+      // A new offset can push the loop off this slot's file; keep it where every slot has audio.
+      this.clampLoopToRange();
+      if (this.state === 'playing') this.restart(this.position);
+    } else {
+      this.applySlotGains(FADE);
+    }
   }
 
   // ── The flip ─────────────────────────────────────────────────────────────
@@ -224,13 +234,25 @@ export class AudioEngine {
     return { start, end: Number.isFinite(end) ? Math.max(start, end) : start };
   }
 
-  /** Set the loop region on Mine's timeline; it is clamped to `loopableRange`. */
-  setLoop(start: number, end: number) {
+  /**
+   * Set the loop region on Mine's timeline; it is clamped to `loopableRange`. Returns false,
+   * and clears the loop, when what is left is under 50 ms.
+   */
+  setLoop(start: number, end: number): boolean {
+    this.loop = this.clampRegion(start, end);
+    this.relaunchForLoopChange();
+    return this.loop !== null;
+  }
+
+  private clampRegion(start: number, end: number): { start: number; end: number } | null {
     const range = this.loopableRange;
     const s = clamp(Math.min(start, end), range.start, range.end);
     const e = clamp(Math.max(start, end), range.start, range.end);
-    this.loop = e - s >= 0.05 ? { start: s, end: e } : null;
-    this.relaunchForLoopChange();
+    return e - s >= MIN_LOOP ? { start: s, end: e } : null;
+  }
+
+  private clampLoopToRange() {
+    if (this.loop) this.loop = this.clampRegion(this.loop.start, this.loop.end);
   }
 
   clearLoop() {
@@ -327,10 +349,11 @@ export class AudioEngine {
 
   private restart(mineTime: number) {
     this.fadeOutAndStop();
-    this.startSources(mineTime, SEEK_FADE);
+    this.startSources(mineTime);
   }
 
-  private startSources(mineTime: number, fadeIn = 0) {
+  // Always fade in: starting mid-waveform from silence would click.
+  private startSources(mineTime: number, fadeIn = SEEK_FADE) {
     const ctx = this.context;
     const generation = ++this.generation;
     // Start after any fade-out still running from a restart.
