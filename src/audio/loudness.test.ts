@@ -42,17 +42,31 @@ describe('integrated loudness (EBU Tech 3341)', () => {
   });
 
   it('case 3: relative gate removes the quiet ends', () => {
-    const x = sine([[-36, 10], [-23, 60], [-36, 10]]);
+    const x = sine([
+      [-36, 10],
+      [-23, 60],
+      [-36, 10],
+    ]);
     expect(integratedLoudness(stereo(x), FS)).toBeCloseTo(-23, 1);
   });
 
   it('case 4: absolute and relative gates together', () => {
-    const x = sine([[-72, 10], [-36, 10], [-23, 60], [-36, 10], [-72, 10]]);
+    const x = sine([
+      [-72, 10],
+      [-36, 10],
+      [-23, 60],
+      [-36, 10],
+      [-72, 10],
+    ]);
     expect(integratedLoudness(stereo(x), FS)).toBeCloseTo(-23, 1);
   });
 
   it('case 5: -26 / -20 / -26 dBFS averages to -23 LUFS', () => {
-    const x = sine([[-26, 20], [-20, 20.1], [-26, 20]]);
+    const x = sine([
+      [-26, 20],
+      [-20, 20.1],
+      [-26, 20],
+    ]);
     expect(integratedLoudness(stereo(x), FS)).toBeCloseTo(-23, 1);
   });
 
