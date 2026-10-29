@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* inline: utilities reference the live --rf-* vars so theme switching works. */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--rf-bg);
+  --color-surface: var(--rf-surface);
+  --color-raised: var(--rf-raised);
+  --color-border: var(--rf-border);
+  --color-text: var(--rf-text);
+  --color-muted: var(--rf-muted);
+  --color-accent: var(--rf-accent);
+  --color-on-accent: var(--rf-on-accent);
+  --color-warning: var(--rf-warning);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: var(--rf-font-sans);
+  --font-mono: var(--rf-font-mono);
+
+  --text-xs: var(--rf-text-xs);
+  --text-xs--line-height: var(--rf-text-xs-lh);
+  --text-sm: var(--rf-text-sm);
+  --text-sm--line-height: var(--rf-text-sm-lh);
+  --text-base: var(--rf-text-base);
+  --text-base--line-height: var(--rf-text-base-lh);
+  --text-lg: var(--rf-text-lg);
+  --text-lg--line-height: var(--rf-text-lg-lh);
+  --text-xl: var(--rf-text-xl);
+  --text-xl--line-height: var(--rf-text-xl-lh);
+  --text-readout: var(--rf-text-readout);
+  --text-readout--line-height: var(--rf-text-readout-lh);
+
+  --radius-sm: var(--rf-radius-sm);
+  --radius-md: var(--rf-radius-md);
+  --radius-lg: var(--rf-radius-lg);
+  --radius-full: var(--rf-radius-full);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--rf-bg);
+  color: var(--rf-text);
+  font-family: var(--rf-font-sans);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.readout {
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
+}

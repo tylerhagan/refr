@@ -1,0 +1,72 @@
+/* Mirrors src/tokens.ts. Dark is the default; light via media query or [data-theme="light"]. */
+:root {
+  color-scheme: dark;
+
+  --rf-bg: #0a0b0d;
+  --rf-surface: #121417;
+  --rf-raised: #1a1d21;
+  --rf-border: #272b31;
+  --rf-text: #e9ebee;
+  --rf-muted: #8a9099;
+  --rf-accent: #3ddc97;
+  --rf-on-accent: #06130d;
+  --rf-warning: #ffb020;
+
+  --rf-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --rf-font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --rf-text-xs: 0.75rem;
+  --rf-text-xs-lh: 1rem;
+  --rf-text-sm: 0.875rem;
+  --rf-text-sm-lh: 1.25rem;
+  --rf-text-base: 1rem;
+  --rf-text-base-lh: 1.5rem;
+  --rf-text-lg: 1.25rem;
+  --rf-text-lg-lh: 1.75rem;
+  --rf-text-xl: 1.75rem;
+  --rf-text-xl-lh: 2rem;
+  --rf-text-readout: 2.5rem;
+  --rf-text-readout-lh: 2.5rem;
+
+  --rf-space-1: 0.25rem;
+  --rf-space-2: 0.5rem;
+  --rf-space-3: 0.75rem;
+  --rf-space-4: 1rem;
+  --rf-space-6: 1.5rem;
+  --rf-space-8: 2rem;
+  --rf-space-12: 3rem;
+
+  --rf-radius-sm: 4px;
+  --rf-radius-md: 8px;
+  --rf-radius-lg: 14px;
+  --rf-radius-full: 9999px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --rf-bg: #f4f5f6;
+    --rf-surface: #ffffff;
+    --rf-raised: #eceef0;
+    --rf-border: #d4d8dd;
+    --rf-text: #14161a;
+    --rf-muted: #5d646e;
+    --rf-accent: #0a9b60;
+    --rf-on-accent: #ffffff;
+    --rf-warning: #b36b00;
+  }
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --rf-bg: #f4f5f6;
+  --rf-surface: #ffffff;
+  --rf-raised: #eceef0;
+  --rf-border: #d4d8dd;
+  --rf-text: #14161a;
+  --rf-muted: #5d646e;
+  --rf-accent: #0a9b60;
+  --rf-on-accent: #ffffff;
+  --rf-warning: #b36b00;
+}
