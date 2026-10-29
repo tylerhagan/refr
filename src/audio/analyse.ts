@@ -5,8 +5,12 @@ import type { LoudnessResult } from './loudness';
 import type { LoudnessRequest, LoudnessResponse } from './loudness.worker';
 
 export interface AnalysisResult extends LoudnessResult {
-  /** Time the worker spent measuring, for the debug panel. */
-  ms: number;
+  /** Worker time per measurement, for the debug panel. */
+  loudnessMs: number;
+  truePeakMs: number;
+  /** From starting the copy to the result arriving: includes the copy, transfer and any
+   * worker start-up, so the gap to the two figures above is overhead. */
+  wallMs: number;
 }
 
 let worker: Worker | null = null;
@@ -26,6 +30,7 @@ export function analyse(
   const run = () =>
     new Promise<AnalysisResult>((resolve, reject) => {
       const id = nextId++;
+      const started = performance.now();
       const channels: Float32Array[] = [];
       for (let c = 0; c < buffer.numberOfChannels; c++) {
         channels.push(buffer.getChannelData(c).slice());
@@ -40,7 +45,13 @@ export function analyse(
         }
         w.removeEventListener('message', onMessage);
         w.removeEventListener('error', onError);
-        resolve({ integratedLufs: msg.integratedLufs, truePeakDbtp: msg.truePeakDbtp, ms: msg.ms });
+        resolve({
+          integratedLufs: msg.integratedLufs,
+          truePeakDbtp: msg.truePeakDbtp,
+          loudnessMs: msg.loudnessMs,
+          truePeakMs: msg.truePeakMs,
+          wallMs: performance.now() - started,
+        });
       };
       const onError = (event: ErrorEvent) => {
         w.removeEventListener('message', onMessage);

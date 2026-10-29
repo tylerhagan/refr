@@ -30,7 +30,13 @@ interface SlotInfo {
   lufs: number;
   peak: number;
   decodeMs: number;
-  analysisMs: number;
+  loudnessMs: number;
+  truePeakMs: number;
+  /** Main-thread time around the worker call: copy, transfer and start-up included. */
+  analysisWallMs: number;
+  overviewMs: number;
+  startedAt: number;
+  finishedAt: number;
   overview?: Float32Array;
   offsetMs: number;
 }
@@ -102,7 +108,6 @@ export default function DevPage() {
   const [loopB, setLoopB] = useState<number | null>(null);
   const [loopOn, setLoopOn] = useState(false);
   const [shortest, setShortest] = useState(false);
-  const [batchWallMs, setBatchWallMs] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -186,6 +191,7 @@ export default function DevPage() {
     async (id: string, file: File) => {
       try {
         const t0 = performance.now();
+        patch(id, { startedAt: t0 });
         const buffer = await decodeFile(engine.context, file);
         const decodeMs = performance.now() - t0;
         patch(id, {
@@ -199,14 +205,20 @@ export default function DevPage() {
         const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) =>
           buffer.getChannelData(c),
         );
+        const t1 = performance.now();
         const overview = computeOverview(channels);
+        const overviewMs = performance.now() - t1;
         buffers.current.set(id, buffer);
         patch(id, {
           status: 'ready',
           progress: 1,
           lufs: result.integratedLufs,
           peak: result.truePeakDbtp,
-          analysisMs: result.ms,
+          loudnessMs: result.loudnessMs,
+          truePeakMs: result.truePeakMs,
+          analysisWallMs: result.wallMs,
+          overviewMs,
+          finishedAt: performance.now(),
           overview,
         });
       } catch (err) {
@@ -231,16 +243,19 @@ export default function DevPage() {
       lufs: 0,
       peak: 0,
       decodeMs: 0,
-      analysisMs: 0,
+      loudnessMs: 0,
+      truePeakMs: 0,
+      analysisWallMs: 0,
+      overviewMs: 0,
+      startedAt: 0,
+      finishedAt: 0,
       offsetMs: 0,
     }));
     slotCount.current += fresh.length;
     setSlots((prev) => [...prev, ...fresh]);
     // One file at a time: decoding several long files at once multiplies peak memory.
     loadQueue.current = loadQueue.current.then(async () => {
-      const t0 = performance.now();
       for (let i = 0; i < fresh.length; i++) await loadOne(fresh[i].id, accepted[i]);
-      setBatchWallMs(performance.now() - t0);
     });
   };
 
@@ -354,7 +369,13 @@ export default function DevPage() {
   const loop = engine.loopRegion;
   const range = engine.loopableRange;
   const debug = engine.debugInfo;
-  const totalMs = ready.reduce((n, s) => n + s.decodeMs + s.analysisMs, 0);
+  const sum = (pick: (s: SlotInfo) => number) => ready.reduce((n, s) => n + pick(s), 0);
+  const totalMs = sum((s) => s.decodeMs + s.analysisWallMs + s.overviewMs);
+  // First start to last finish, so files picked in separate goes still count.
+  const wallMs =
+    ready.length === 0
+      ? 0
+      : Math.max(...ready.map((s) => s.finishedAt)) - Math.min(...ready.map((s) => s.startedAt));
   const roleOf = (id: string) => {
     const i = slots.filter((s) => s.status !== 'error').findIndex((s) => s.id === id);
     return i <= 0 ? 'Mine' : `Ref ${i}`;
@@ -406,7 +427,13 @@ export default function DevPage() {
                     <Stat label="Integrated" value={`${fmtDb(s.lufs)} LUFS`} />
                     <Stat label="True peak" value={`${fmtDb(s.peak)} dBTP`} />
                     <Stat label="Gain" value={`${fmtSigned(gainFor(s.id))} dB`} />
-                    <Stat label="Analysis" value={`${Math.round(s.analysisMs)} ms`} />
+                    <Stat label="Loudness" value={`${Math.round(s.loudnessMs)} ms`} />
+                    <Stat label="True peak" value={`${Math.round(s.truePeakMs)} ms`} />
+                    <Stat
+                      label="Worker overhead"
+                      value={`${Math.round(s.analysisWallMs - s.loudnessMs - s.truePeakMs)} ms`}
+                    />
+                    <Stat label="Overview" value={`${Math.round(s.overviewMs)} ms`} />
                   </>
                 )}
               </dl>
@@ -584,7 +611,7 @@ export default function DevPage() {
           <p className="readout text-readout">{fmtSeconds(totalMs)} s</p>
           <p className="text-sm">
             decode + analysis, {ready.length} file{ready.length === 1 ? '' : 's'} (wall{' '}
-            <span className="readout">{fmtSeconds(batchWallMs)} s</span>)
+            <span className="readout">{fmtSeconds(wallMs)} s</span>)
           </p>
           {ready.length >= 3 && (
             <p
@@ -603,6 +630,14 @@ export default function DevPage() {
           </p>
         </div>
         <dl className="text-xs">
+          <Stat label="Decode (all)" value={`${fmtSeconds(sum((s) => s.decodeMs))} s`} />
+          <Stat label="Loudness (all)" value={`${fmtSeconds(sum((s) => s.loudnessMs))} s`} />
+          <Stat label="True peak (all)" value={`${fmtSeconds(sum((s) => s.truePeakMs))} s`} />
+          <Stat
+            label="Worker overhead (all)"
+            value={`${fmtSeconds(sum((s) => s.analysisWallMs - s.loudnessMs - s.truePeakMs))} s`}
+          />
+          <Stat label="Overview (all)" value={`${fmtSeconds(sum((s) => s.overviewMs))} s`} />
           <Stat label="Context" value={debug.contextState} />
           <Stat label="Sample rate" value={`${debug.sampleRate} Hz`} />
           <Stat label="Base latency" value={`${(debug.baseLatency * 1000).toFixed(1)} ms`} />
