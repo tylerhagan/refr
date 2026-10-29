@@ -1,0 +1,8 @@
+node_modules
+dist
+.vercel
+coverage
+*.local
+*.wav
+*.pdf
+doc-changes.md
