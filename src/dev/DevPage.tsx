@@ -17,6 +17,7 @@ const BANDS: { id: Band; label: string }[] = [
 ];
 const OFFSET_STEPS = [-100, -10, 10, 100];
 const BUDGET_MS = 20_000;
+const GATE_AUDIO_SECONDS = 12 * 60;
 
 interface SlotInfo {
   id: string;
@@ -371,6 +372,9 @@ export default function DevPage() {
   const debug = engine.debugInfo;
   const sum = (pick: (s: SlotInfo) => number) => ready.reduce((n, s) => n + pick(s), 0);
   const totalMs = sum((s) => s.decodeMs + s.analysisWallMs + s.overviewMs);
+  const audioSeconds = sum((s) => s.duration);
+  // Time scales with audio length, so project what 12 minutes would take at this rate.
+  const projectedMs = audioSeconds > 0 ? (totalMs * GATE_AUDIO_SECONDS) / audioSeconds : 0;
   // First start to last finish, so files picked in separate goes still count.
   const wallMs =
     ready.length === 0
@@ -613,17 +617,28 @@ export default function DevPage() {
             decode + analysis, {ready.length} file{ready.length === 1 ? '' : 's'} (wall{' '}
             <span className="readout">{fmtSeconds(wallMs)} s</span>)
           </p>
-          {ready.length >= 3 && (
+          {ready.length > 0 && (
+            // The gate is 20 s for 12 minutes of audio (three 4-minute files). Judge by
+            // minutes loaded, not file count, and only once there is enough to be fair.
             <p
               className={clsx(
                 'readout text-lg',
-                totalMs < BUDGET_MS ? 'text-accent' : 'text-warning',
+                audioSeconds < GATE_AUDIO_SECONDS * 0.9
+                  ? 'text-muted'
+                  : projectedMs < BUDGET_MS
+                    ? 'text-accent'
+                    : 'text-warning',
               )}
             >
-              {totalMs < BUDGET_MS ? 'PASS' : 'FAIL'}: budget is {BUDGET_MS / 1000} s for three
-              4-min files
+              {audioSeconds < GATE_AUDIO_SECONDS * 0.9
+                ? `Load 12 min of audio to judge (${(audioSeconds / 60).toFixed(1)} min so far)`
+                : `${projectedMs < BUDGET_MS ? 'PASS' : 'FAIL'}: ${fmtSeconds(projectedMs)} s per 12 min of audio, budget ${BUDGET_MS / 1000} s`}
             </p>
           )}
+          <p className="text-sm">
+            {(audioSeconds / 60).toFixed(1)} min of audio,{' '}
+            {audioSeconds > 0 ? (audioSeconds / (totalMs / 1000)).toFixed(0) : 0}× real time
+          </p>
           <p className="readout text-lg">
             {slots.filter((s) => s.status === 'ready').length}/{MAX_SLOTS} loaded,{' '}
             {debug.decodedMegabytes.toFixed(0)} MB decoded

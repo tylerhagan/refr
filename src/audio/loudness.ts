@@ -94,6 +94,10 @@ export function integratedLoudness(
   // Weighted K-filtered energy per 100 ms segment, summed over channels.
   const segmentEnergy = new Float64Array(segmentCount);
 
+  // Coefficients as locals: property loads in the inner loop are costly when the JIT is off.
+  const { b0: sb0, b1: sb1, b2: sb2, a1: sa1, a2: sa2 } = s;
+  const { a1: ha1, a2: ha2 } = h;
+
   for (let c = 0; c < channels.length; c++) {
     const weight = weights[c];
     if (weight === 0) continue;
@@ -110,10 +114,10 @@ export function integratedLoudness(
       const end = (seg + 1) * hop;
       for (let i = seg * hop; i < end; i++) {
         const x0 = x[i];
-        const y0 = s.b0 * x0 + s.b1 * x1 + s.b2 * x2 - s.a1 * y1 - s.a2 * y2;
+        const y0 = sb0 * x0 + sb1 * x1 + sb2 * x2 - sa1 * y1 - sa2 * y2;
         x2 = x1;
         x1 = x0;
-        const zOut = y0 - 2 * y1 + y2 - h.a1 * z1 - h.a2 * z2;
+        const zOut = y0 - 2 * y1 + y2 - ha1 * z1 - ha2 * z2;
         y2 = y1;
         y1 = y0;
         z2 = z1;
