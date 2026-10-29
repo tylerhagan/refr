@@ -6,3 +6,6 @@ coverage
 *.wav
 *.pdf
 doc-changes.md
+
+# Claude Code local settings
+.claude/
